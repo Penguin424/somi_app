@@ -5,6 +5,7 @@ import '../models/captura_model.dart';
 import '../models/tool_ejecutada_model.dart';
 import '../providers/captura_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/conversacion_provider.dart';
 import '../providers/historial_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/upp_tokens.dart';
@@ -33,6 +34,7 @@ class CapturaScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const UppCapsLabel('SOMI', color: UppTokens.accent, fontSize: 13, tracking: UppTokens.trackingWide),
         actions: [
+          const _BotonBorrarContexto(),
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: 'Historial',
@@ -557,7 +559,55 @@ class _RecienteRow extends StatelessWidget {
     if (transcripcion != null && transcripcion.isNotEmpty) {
       return transcripcion.length > 44 ? '${transcripcion.substring(0, 44)}…' : transcripcion;
     }
-    return captura.contexto;
+    return captura.origen;
+  }
+}
+
+/// Botón de la barra superior que borra la memoria de conversación y el
+/// contexto de texto libre de una sola vez — para cuando SOMI se confunde
+/// con algo viejo y conviene arrancar limpio. Nunca toca las capturas
+/// guardadas (esas viven en una box de Hive separada, ver
+/// `ConversacionService`).
+class _BotonBorrarContexto extends ConsumerWidget {
+  const _BotonBorrarContexto();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final turnos = ref.watch(conversacionTurnosProvider);
+    final contexto = ref.watch(settingsProvider).value?.contexto ?? '';
+    final hayAlgoQueBorrar = turnos > 0 || contexto.isNotEmpty;
+
+    return IconButton(
+      icon: const Icon(Icons.cleaning_services_outlined),
+      tooltip: 'Borrar contexto',
+      onPressed: hayAlgoQueBorrar ? () => _confirmarYBorrar(context, ref, turnos) : null,
+    );
+  }
+
+  Future<void> _confirmarYBorrar(BuildContext context, WidgetRef ref, int turnos) async {
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Borrar contexto'),
+        content: Text(
+          turnos > 0
+              ? 'Se van a borrar $turnos turno${turnos == 1 ? '' : 's'} en memoria y el '
+                  'contexto de situación. Las notas ya guardadas no se tocan.'
+              : 'Se va a borrar el contexto de situación. Las notas ya guardadas no se tocan.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Borrar')),
+        ],
+      ),
+    );
+    if (confirmado != true) return;
+
+    await ref.read(conversacionProvider.notifier).limpiar();
+    await ref.read(settingsProvider.notifier).guardarContexto('');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Contexto borrado')));
+    }
   }
 }
 

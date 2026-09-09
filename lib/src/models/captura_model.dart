@@ -15,7 +15,7 @@ class CapturaModel {
     required this.id,
     required this.audioPath,
     required this.estado,
-    required this.contexto,
+    required this.origen,
     required this.creadaEn,
     this.transcripcion,
     this.respuesta,
@@ -29,8 +29,12 @@ class CapturaModel {
   final String audioPath;
   final EstadoCaptura estado;
 
-  /// "app" o "widget", según de dónde salió la captura.
-  final String contexto;
+  /// "app" o "widget", según de dónde salió la captura. Puramente local
+  /// (para mostrarlo en Historial) — ya no se manda al servidor, que ahora
+  /// usa el nombre `contexto` para el texto libre de situación
+  /// (ver `VozService.enviarVoz`). Se llamaba `contexto` antes de esa
+  /// feature; renombrado para no confundir los dos conceptos.
+  final String origen;
 
   final DateTime creadaEn;
   final String? transcripcion;
@@ -43,7 +47,7 @@ class CapturaModel {
   CapturaModel copyWith({
     String? audioPath,
     EstadoCaptura? estado,
-    String? contexto,
+    String? origen,
     String? transcripcion,
     String? respuesta,
     String? audioUrl,
@@ -55,7 +59,7 @@ class CapturaModel {
       id: id,
       audioPath: audioPath ?? this.audioPath,
       estado: estado ?? this.estado,
-      contexto: contexto ?? this.contexto,
+      origen: origen ?? this.origen,
       creadaEn: creadaEn,
       transcripcion: transcripcion ?? this.transcripcion,
       respuesta: respuesta ?? this.respuesta,
@@ -70,7 +74,7 @@ class CapturaModel {
         'id': id,
         'audioPath': audioPath,
         'estado': estado.name,
-        'contexto': contexto,
+        'origen': origen,
         'creadaEn': creadaEn.toIso8601String(),
         'transcripcion': transcripcion,
         'respuesta': respuesta,
@@ -85,7 +89,11 @@ class CapturaModel {
       id: map['id'] as String,
       audioPath: map['audioPath'] as String? ?? '',
       estado: EstadoCaptura.values.byName(map['estado'] as String? ?? 'pendiente'),
-      contexto: map['contexto'] as String? ?? 'app',
+      // 'origen' es la clave nueva; 'contexto' es la vieja (capturas ya
+      // guardadas en Hive de instalaciones existentes, de antes del
+      // rename) — sin este fallback esas capturas perderían el dato al
+      // releerse.
+      origen: map['origen'] as String? ?? map['contexto'] as String? ?? 'app',
       creadaEn: DateTime.parse(map['creadaEn'] as String),
       transcripcion: map['transcripcion'] as String?,
       respuesta: map['respuesta'] as String?,

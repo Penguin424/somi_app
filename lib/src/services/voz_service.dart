@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -109,12 +110,20 @@ class VozService {
     }
   }
 
+  /// `contexto` acá es el texto libre de situación que el orquestador suma
+  /// al system prompt (ej. "estoy en el gimnasio") — no el `origen` de la
+  /// captura (`app`/`widget`, ver `CapturaModel.origen`), que dejó de
+  /// mandarse al servidor porque ya no tiene un campo para él.
+  /// `historial` viaja como string JSON porque este endpoint es
+  /// `multipart/form-data` (ver `API_ORQUESTADOR.md` § `POST /voz`).
   Future<VozResponseModel> enviarVoz({
     required String baseUrl,
     required String token,
     required File audio,
     required String idempotencyKey,
-    String contexto = 'app',
+    String? personalidad,
+    String? contexto,
+    List<Map<String, dynamic>>? historial,
   }) async {
     try {
       final formData = FormData.fromMap({
@@ -126,7 +135,9 @@ class VozService {
           contentType: DioMediaType('audio', 'mp4'),
         ),
         'idempotency_key': idempotencyKey,
-        'contexto': contexto,
+        if (personalidad != null && personalidad.isNotEmpty) 'personalidad': personalidad,
+        if (contexto != null && contexto.isNotEmpty) 'contexto': contexto,
+        if (historial != null && historial.isNotEmpty) 'historial': jsonEncode(historial),
       });
       final response = await _dio.post(
         '${normalizarBaseUrl(baseUrl)}/voz',

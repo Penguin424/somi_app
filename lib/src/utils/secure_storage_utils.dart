@@ -11,6 +11,8 @@ class SecureStorageUtils {
   static const _keyToken = 'orquestador_auth_token';
   static const _keyBaseUrl = 'orquestador_base_url';
   static const _keyTtsLocalHabilitado = 'tts_local_habilitado';
+  static const _keyPersonalidad = 'somi_personalidad';
+  static const _keyContexto = 'somi_contexto';
 
   Future<String?> readToken() => _storage.read(key: _keyToken);
 
@@ -34,4 +36,16 @@ class SecureStorageUtils {
 
   Future<void> writeTtsLocalHabilitado(bool habilitado) =>
       _storage.write(key: _keyTtsLocalHabilitado, value: habilitado.toString());
+
+  /// `null` si el usuario nunca lo tocó: `SettingsNotifier.build` decide
+  /// el default (`PersonalidadSomi.condensada`).
+  Future<String?> readPersonalidad() => _storage.read(key: _keyPersonalidad);
+
+  Future<void> writePersonalidad(String personalidad) =>
+      _storage.write(key: _keyPersonalidad, value: personalidad);
+
+  Future<String?> readContexto() => _storage.read(key: _keyContexto);
+
+  Future<void> writeContexto(String contexto) =>
+      _storage.write(key: _keyContexto, value: contexto);
 }

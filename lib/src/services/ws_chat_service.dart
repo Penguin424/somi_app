@@ -51,6 +51,16 @@ class WsPing extends WsEvent {
   const WsPing();
 }
 
+/// Confirmación de que el servidor aplicó el `configurar` mandado por
+/// `enviarConfigurar` (personalidad/contexto/historial de la conexión). No
+/// se espera antes de mandar el audio: el orden de mensajes en el
+/// WebSocket ya garantiza que el servidor procesa `configurar` antes que
+/// `fin_audio`, y esperar acá solo agregaría un punto donde el turno se
+/// cuelga contra un servidor viejo que nunca lo manda.
+class WsConfigurado extends WsEvent {
+  const WsConfigurado();
+}
+
 class WsDesconocido extends WsEvent {
   const WsDesconocido();
 }
@@ -78,6 +88,8 @@ WsEvent parsearEventoWs(Map<String, dynamic> json) {
       // Mensaje de aplicación, no un frame de protocolo WS: se ignora
       // igual que cualquier tipo no reconocido.
       return const WsPing();
+    case 'configurado':
+      return const WsConfigurado();
     default:
       return const WsDesconocido();
   }
@@ -133,6 +145,25 @@ class WsChatService {
       },
       cancelOnError: false,
     );
+  }
+
+  /// Fija personalidad/contexto/historial para el resto de la conexión.
+  /// Se manda una sola vez, apenas se abre el socket — antes de cualquier
+  /// `audio_chunk`/`fin_audio`/`texto` — y se omiten del JSON los campos
+  /// vacíos: el servidor solo pisa lo que efectivamente se le manda.
+  void enviarConfigurar({
+    String? personalidad,
+    String? contexto,
+    List<Map<String, dynamic>>? historial,
+  }) {
+    final mensaje = <String, dynamic>{'tipo': 'configurar'};
+    if (personalidad != null && personalidad.isNotEmpty) mensaje['personalidad'] = personalidad;
+    if (contexto != null && contexto.isNotEmpty) mensaje['contexto'] = contexto;
+    if (historial != null && historial.isNotEmpty) mensaje['historial'] = historial;
+    // Sin nada que configurar, no vale la pena el mensaje: el servidor de
+    // todos modos ignoraría un `configurar` sin campos.
+    if (mensaje.length == 1) return;
+    _channel?.sink.add(jsonEncode(mensaje));
   }
 
   void enviarAudioChunk(Uint8List bytes) {

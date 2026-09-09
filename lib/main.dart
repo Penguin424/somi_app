@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import 'src/providers/conversacion_provider.dart';
 import 'src/providers/historial_provider.dart';
 import 'src/screens/captura_screen.dart';
 import 'src/theme/upp_theme.dart';
@@ -11,7 +12,12 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await _configurarSesionDeAudio();
-  runApp(const ProviderScope(child: SomiVozApp()));
+  final contenedor = ProviderContainer();
+  // Precarga la memoria de conversación desde Hive antes del primer frame,
+  // igual que el resto del estado async de la app: sin esto, `MEM n` en la
+  // franja de estado arrancaría en 0 y saltaría después del primer build.
+  await contenedor.read(conversacionProvider.future);
+  runApp(UncontrolledProviderScope(container: contenedor, child: const SomiVozApp()));
 }
 
 /// Configura la sesión de audio nativa una sola vez al arrancar.

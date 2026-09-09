@@ -8,6 +8,7 @@ import '../models/captura_model.dart';
 import '../services/queue_service.dart';
 import '../services/voz_service.dart';
 import '../utils/constants.dart';
+import 'conversacion_provider.dart';
 import 'settings_provider.dart';
 
 final queueServiceProvider = Provider<QueueService>((ref) => QueueService.instancia);
@@ -142,12 +143,15 @@ class SincronizadorNotifier extends Notifier<bool> {
       await _actualizar(id, (fresco) => fresco.copyWith(estado: EstadoCaptura.enviando));
 
       try {
+        final mensajesMemoria = ref.read(conversacionProvider).value ?? const [];
         final respuesta = await ref.read(vozServiceProvider).enviarVoz(
               baseUrl: settings.baseUrl,
               token: settings.token!,
               audio: File(captura.audioPath),
               idempotencyKey: captura.id,
-              contexto: captura.contexto,
+              personalidad: settings.personalidad,
+              contexto: settings.contexto,
+              historial: mensajesMemoria.map((m) => m.toMap()).toList(),
             );
         await _actualizar(id, (fresco) {
           // Preservar lo que ya se ganó: si esta respuesta viene vacía
@@ -162,6 +166,12 @@ class SincronizadorNotifier extends Notifier<bool> {
             toolsEjecutadas: respuesta.toolsEjecutadas.isNotEmpty ? respuesta.toolsEjecutadas : fresco.toolsEjecutadas,
           );
         });
+        if (respuesta.transcripcion.isNotEmpty || respuesta.respuesta.isNotEmpty) {
+          await ref.read(conversacionProvider.notifier).registrarTurno(
+                respuesta.transcripcion,
+                respuesta.respuesta,
+              );
+        }
         _proximoIntentoEpochMs.remove(id);
       } on VozServiceException catch (e) {
         final intentos = captura.intentos + 1;

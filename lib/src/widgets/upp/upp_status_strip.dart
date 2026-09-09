@@ -2,14 +2,17 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/captura_model.dart';
+import '../../providers/conversacion_provider.dart';
 import '../../providers/historial_provider.dart';
 import '../../theme/upp_tokens.dart';
 import 'upp_caps_label.dart';
 
-/// La franja superior `SOMI ░ ● ONLINE ░ COLA n`. Conectividad real vía
-/// `conectividadProvider`; conteo de cola real contando `pendiente` +
-/// `fallida` en `historialProvider`. Se omite el `K-77 ░ 184 MHz` del
-/// mock original: es un adorno sin dato detrás.
+/// La franja superior `SOMI ░ ● ONLINE ░ COLA n ░ MEM n`. Conectividad real
+/// vía `conectividadProvider`; conteo de cola real contando `pendiente` +
+/// `fallida` en `historialProvider`; `MEM n` son los turnos que hay en la
+/// memoria de conversación (`conversacionTurnosProvider`) — así se ve de
+/// un vistazo cuándo conviene tocar "Borrar contexto". Se omite el `K-77 ░
+/// 184 MHz` del mock original: es un adorno sin dato detrás.
 class UppStatusStrip extends ConsumerWidget {
   const UppStatusStrip({super.key});
 
@@ -20,6 +23,7 @@ class UppStatusStrip extends ConsumerWidget {
     final enCola = capturas
         .where((c) => c.estado == EstadoCaptura.pendiente || c.estado == EstadoCaptura.enviando)
         .length;
+    final turnosEnMemoria = ref.watch(conversacionTurnosProvider);
     final color = online ? UppTokens.accent : UppTokens.danger;
 
     return Container(
@@ -40,6 +44,10 @@ class UppStatusStrip extends ConsumerWidget {
           const UppCapsLabel('░', fontSize: 9.5),
           const SizedBox(width: 8),
           UppCapsLabel('COLA $enCola', fontSize: 9.5),
+          const SizedBox(width: 8),
+          const UppCapsLabel('░', fontSize: 9.5),
+          const SizedBox(width: 8),
+          UppCapsLabel('MEM $turnosEnMemoria', fontSize: 9.5),
         ],
       ),
     );

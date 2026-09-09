@@ -9,6 +9,17 @@ class AppConstants {
 
   static const String hiveBoxCapturas = 'capturas';
 
+  /// Box separada de `hiveBoxCapturas` a propósito: borrar la memoria de
+  /// conversación (el botón "Borrar contexto") nunca debe borrar el
+  /// registro de notas ya capturadas.
+  static const String hiveBoxConversacion = 'conversacion';
+
+  /// Tope de mensajes (user + assistant, 2 por turno) que se acumulan en
+  /// memoria y se mandan como `historial` en cada request. Alineado con
+  /// `HISTORIAL_LIMITE_MENSAJES` del orquestador: mandar más de lo que el
+  /// servidor va a usar es ancho de banda tirado.
+  static const int maxMensajesMemoria = 12;
+
   static const Duration maxRecordingDuration = Duration(minutes: 5);
 
   static const Duration pingInterval = Duration(seconds: 30);

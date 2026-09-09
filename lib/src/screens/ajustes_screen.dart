@@ -7,6 +7,7 @@ import '../providers/historial_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/upp_tokens.dart';
 import '../utils/constants.dart';
+import '../utils/personalidad_somi.dart';
 import '../widgets/upp/upp_caps_label.dart';
 import '../widgets/upp/upp_hard_button.dart';
 import '../widgets/upp/upp_panel.dart';
@@ -21,6 +22,8 @@ class AjustesScreen extends ConsumerStatefulWidget {
 class _AjustesScreenState extends ConsumerState<AjustesScreen> {
   final _tokenController = TextEditingController();
   final _baseUrlController = TextEditingController();
+  final _personalidadController = TextEditingController();
+  final _contextoController = TextEditingController();
   bool _tokenVisible = false;
   bool _inicializado = false;
 
@@ -28,6 +31,8 @@ class _AjustesScreenState extends ConsumerState<AjustesScreen> {
   void dispose() {
     _tokenController.dispose();
     _baseUrlController.dispose();
+    _personalidadController.dispose();
+    _contextoController.dispose();
     super.dispose();
   }
 
@@ -35,6 +40,8 @@ class _AjustesScreenState extends ConsumerState<AjustesScreen> {
     if (_inicializado) return;
     _tokenController.text = settings.token ?? '';
     _baseUrlController.text = settings.baseUrl;
+    _personalidadController.text = settings.personalidad;
+    _contextoController.text = settings.contexto;
     _inicializado = true;
   }
 
@@ -103,10 +110,70 @@ class _AjustesScreenState extends ConsumerState<AjustesScreen> {
                 ),
               ),
               const SizedBox(height: 28),
+              const Divider(height: 1),
+              const SizedBox(height: 20),
+              const UppCapsLabel('Personalidad de SOMI', fontSize: 9),
+              const SizedBox(height: 7),
+              UppPanel(
+                child: Text(
+                  'Se SUMA al prompt del servidor (reglas de tools, fecha de hoy), '
+                  'nunca lo reemplaza.',
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontFamilyFallback: UppTokens.fontMonoFallback,
+                    fontSize: 10,
+                    height: 1.6,
+                    color: UppTokens.fg3,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 7),
+              TextField(
+                controller: _personalidadController,
+                maxLines: null,
+                minLines: 6,
+                style: const TextStyle(fontFamily: 'monospace', fontFamilyFallback: UppTokens.fontMonoFallback, fontSize: 12),
+                decoration: const InputDecoration(border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => setState(() {
+                      _personalidadController.text = PersonalidadSomi.condensada;
+                    }),
+                    child: const Text('Restaurar SOMI (voz)'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => setState(() {
+                      _personalidadController.text = PersonalidadSomi.completa;
+                    }),
+                    child: const Text('Versión completa'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const UppCapsLabel('Contexto de esta conversación', fontSize: 9),
+              const SizedBox(height: 7),
+              TextField(
+                controller: _contextoController,
+                maxLines: 3,
+                minLines: 2,
+                style: const TextStyle(fontFamily: 'monospace', fontFamilyFallback: UppTokens.fontMonoFallback),
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'ej. estoy en el gimnasio',
+                ),
+              ),
+              const SizedBox(height: 28),
               UppHardButton(
                 onTap: () async {
                   await ref.read(settingsProvider.notifier).guardarBaseUrl(_baseUrlController.text);
                   await ref.read(settingsProvider.notifier).guardarToken(_tokenController.text.trim());
+                  await ref.read(settingsProvider.notifier).guardarPersonalidad(_personalidadController.text);
+                  await ref.read(settingsProvider.notifier).guardarContexto(_contextoController.text.trim());
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ajustes guardados')));
                   }

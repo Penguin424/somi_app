@@ -12,6 +12,7 @@ import '../utils/audio_recorder_utils.dart';
 import '../utils/constants.dart';
 import '../utils/tts_utils.dart';
 import 'chat_provider.dart';
+import 'conversacion_provider.dart';
 import 'historial_provider.dart';
 import 'settings_provider.dart';
 
@@ -199,7 +200,7 @@ class CapturaNotifier extends Notifier<CapturaUiState> {
     state = CapturaUiState.inicial();
   }
 
-  Future<void> detenerYEnviar({String contexto = 'app'}) async {
+  Future<void> detenerYEnviar({String origen = 'app'}) async {
     _timerDuracion?.cancel();
     await _ampSub?.cancel();
 
@@ -229,7 +230,7 @@ class CapturaNotifier extends Notifier<CapturaUiState> {
       id: idempotencyKey,
       audioPath: ruta,
       estado: EstadoCaptura.pendiente,
-      contexto: contexto,
+      origen: origen,
       creadaEn: DateTime.now(),
     );
     final cola = ref.read(queueServiceProvider);
@@ -323,13 +324,25 @@ class CapturaNotifier extends Notifier<CapturaUiState> {
     }
   }
 
+  /// La memoria de conversación tal como la necesita el campo `historial`
+  /// de `POST /voz` / `WS /chat`: `{"role": ..., "content": ...}` planos,
+  /// sin el modelo local de por medio.
+  List<Map<String, dynamic>> _historialParaEnviar() {
+    final mensajes = ref.read(conversacionProvider).value ?? const [];
+    return mensajes.map((m) => m.toMap()).toList();
+  }
+
   Future<bool> _intentarViaWs(CapturaModel captura) async {
+    final settings = ref.read(settingsProvider).value;
     final sincronizador = ref.read(sincronizadorProvider.notifier);
     sincronizador.marcarEnVuelo(captura.id);
     try {
       final resultado = await ref.read(chatProvider.notifier).enviarYEsperar(
             idempotencyKey: captura.id,
             rutaAudio: captura.audioPath,
+            personalidad: settings?.personalidad,
+            contexto: settings?.contexto,
+            historial: _historialParaEnviar(),
           );
       if (resultado == null) {
         // El WS falló a mitad de turno: la captura queda `pendiente` en la
@@ -345,6 +358,10 @@ class CapturaNotifier extends Notifier<CapturaUiState> {
         respuesta: resultado.respuesta,
         toolsEjecutadas: resultado.toolsEjecutadas,
       ));
+      await ref.read(conversacionProvider.notifier).registrarTurno(
+            resultado.transcripcion,
+            resultado.respuesta,
+          );
 
       if (resultado.rutaAudioLocal.isNotEmpty) {
         state = state.copyWith(estado: EstadoCapturaUi.hablando);

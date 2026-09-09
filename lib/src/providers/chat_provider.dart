@@ -116,6 +116,9 @@ class ChatNotifier extends Notifier<ChatUiState> {
   Future<ResultadoChatWs?> enviarYEsperar({
     required String idempotencyKey,
     required String rutaAudio,
+    String? personalidad,
+    String? contexto,
+    List<Map<String, dynamic>>? historial,
   }) async {
     final settings = ref.read(settingsProvider).value;
     if (settings == null || !settings.tieneToken) return null;
@@ -137,6 +140,11 @@ class ChatNotifier extends Notifier<ChatUiState> {
       state = state.copyWith(estado: EstadoChat.error, errorMensaje: 'No se pudo conectar: $e');
       return null;
     }
+
+    // Sin esperar confirmación (ver docstring de `WsConfigurado`): el
+    // orden de mensajes del socket garantiza que el servidor lo procesa
+    // antes que los `audio_chunk` que siguen.
+    _servicio.enviarConfigurar(personalidad: personalidad, contexto: contexto, historial: historial);
 
     final completer = Completer<ResultadoChatWs?>();
     _completerTurno = completer;
@@ -200,6 +208,8 @@ class ChatNotifier extends Notifier<ChatUiState> {
           // esperando el `fin` del turno.
           state = state.copyWith(errorMensaje: mensaje);
         case WsPing():
+          break;
+        case WsConfigurado():
           break;
         case WsDesconocido():
           break;
