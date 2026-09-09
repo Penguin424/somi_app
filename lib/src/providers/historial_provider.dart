@@ -12,6 +12,16 @@ import 'settings_provider.dart';
 
 final queueServiceProvider = Provider<QueueService>((ref) => QueueService.instancia);
 
+/// True si el dispositivo tiene alguna conectividad de red. Alimenta el
+/// indicador "● ONLINE" de la franja de estado de la UI.
+final conectividadProvider = StreamProvider<bool>((ref) async* {
+  final actual = await Connectivity().checkConnectivity();
+  yield !actual.contains(ConnectivityResult.none);
+  await for (final estados in Connectivity().onConnectivityChanged) {
+    yield !estados.contains(ConnectivityResult.none);
+  }
+});
+
 /// Lista reactiva de capturas (cola offline + historial), ordenada de más
 /// reciente a más vieja. Se re-emite cada vez que Hive cambia, así que
 /// tanto la pantalla de Captura como la de Historial quedan siempre al día
@@ -34,6 +44,19 @@ class SincronizadorNotifier extends Notifier<bool> {
   Timer? _timerReintento;
   final Map<String, int> _proximoIntentoEpochMs = {};
 
+  /// Ids con un envío realmente en curso ahora mismo (por WS o por este
+  /// notifier), sea quien sea quien lo esté haciendo. Evita que
+  /// `sincronizarTodas` dispare un `POST /voz` concurrente con un turno
+  /// WS que todavía sigue vivo — la causa de los dos envíos con la misma
+  /// `idempotency_key` que pisaban `audioUrl` entre sí.
+  final Set<String> _enVuelo = {};
+
+  /// Cuándo (epoch ms) este notifier marcó cada captura como `enviando`.
+  /// Si un id de `enviando` no está acá, es que venía de una sesión
+  /// anterior (la app se cerró a mitad de un envío) y no hay forma de
+  /// saber su edad real: se trata como viejo y se deja reintentar.
+  final Map<String, int> _enviandoDesdeEpochMs = {};
+
   @override
   bool build() {
     ref.onDispose(() {
@@ -49,12 +72,30 @@ class SincronizadorNotifier extends Notifier<bool> {
     return false;
   }
 
+  /// Marca `id` como en vuelo. Lo usa `captura_provider._intentarViaWs`
+  /// antes de abrir el WS, para que el sincronizador periódico no le pise
+  /// el turno con un `POST /voz` concurrente.
+  void marcarEnVuelo(String id) => _enVuelo.add(id);
+
+  /// Libera `id`. Debe llamarse siempre, incluso si el envío por WS
+  /// falló, o el id queda bloqueado para el sincronizador para siempre.
+  void liberar(String id) => _enVuelo.remove(id);
+
+  bool _enviandoEsViejo(CapturaModel c) {
+    if (c.estado != EstadoCaptura.enviando) return false;
+    final desde = _enviandoDesdeEpochMs[c.id];
+    if (desde == null) return true;
+    final edad = DateTime.now().millisecondsSinceEpoch - desde;
+    return edad >= AppConstants.wsTurnoTimeoutMaximo.inMilliseconds;
+  }
+
   Future<void> sincronizarTodas() async {
     if (state) return; // ya hay una sincronización en curso
     final cola = ref.read(queueServiceProvider);
     final pendientes = cola
         .listar()
-        .where((c) => c.estado == EstadoCaptura.pendiente || c.estado == EstadoCaptura.enviando)
+        .where((c) => !_enVuelo.contains(c.id))
+        .where((c) => c.estado == EstadoCaptura.pendiente || _enviandoEsViejo(c))
         .where((c) => _tocaReintentar(c.id))
         .toList();
     if (pendientes.isEmpty) return;
@@ -72,7 +113,20 @@ class SincronizadorNotifier extends Notifier<bool> {
     return DateTime.now().millisecondsSinceEpoch >= proximo;
   }
 
+  /// Relee `id` en Hive y aplica `f` sobre ese registro **fresco**, no
+  /// sobre un snapshot viejo. Reutilizado por cada escritura de
+  /// `sincronizarUna`: sin esto, dos envíos concurrentes de la misma
+  /// captura pueden pisarse con `copyWith` sobre datos ya viejos y perder
+  /// la respuesta buena.
+  Future<void> _actualizar(String id, CapturaModel Function(CapturaModel actual) f) async {
+    final cola = ref.read(queueServiceProvider);
+    final fresco = cola.obtener(id);
+    if (fresco == null) return; // se borró mientras tanto
+    await cola.guardar(f(fresco));
+  }
+
   Future<void> sincronizarUna(String id) async {
+    if (_enVuelo.contains(id)) return; // ya se está mandando ahora mismo
     final cola = ref.read(queueServiceProvider);
     final captura = cola.obtener(id);
     if (captura == null || captura.estado == EstadoCaptura.enviada) return;
@@ -82,49 +136,62 @@ class SincronizadorNotifier extends Notifier<bool> {
       return; // sin token configurado todavía, no tiene sentido intentar
     }
 
-    await cola.guardar(captura.copyWith(estado: EstadoCaptura.enviando));
-
+    _enVuelo.add(id);
+    _enviandoDesdeEpochMs[id] = DateTime.now().millisecondsSinceEpoch;
     try {
-      final respuesta = await ref.read(vozServiceProvider).enviarVoz(
-            baseUrl: settings.baseUrl,
-            token: settings.token!,
-            audio: File(captura.audioPath),
-            idempotencyKey: captura.id,
-            contexto: captura.contexto,
+      await _actualizar(id, (fresco) => fresco.copyWith(estado: EstadoCaptura.enviando));
+
+      try {
+        final respuesta = await ref.read(vozServiceProvider).enviarVoz(
+              baseUrl: settings.baseUrl,
+              token: settings.token!,
+              audio: File(captura.audioPath),
+              idempotencyKey: captura.id,
+              contexto: captura.contexto,
+            );
+        await _actualizar(id, (fresco) {
+          // Preservar lo que ya se ganó: si esta respuesta viene vacía
+          // (por ejemplo, una respuesta deduplicada del servidor por
+          // `idempotency_key`) pero el registro fresco ya tiene el dato
+          // bueno de otro envío, no lo pisamos con vacío.
+          return fresco.copyWith(
+            estado: EstadoCaptura.enviada,
+            transcripcion: respuesta.transcripcion.isNotEmpty ? respuesta.transcripcion : fresco.transcripcion,
+            respuesta: respuesta.respuesta.isNotEmpty ? respuesta.respuesta : fresco.respuesta,
+            audioUrl: respuesta.audioUrl.isNotEmpty ? respuesta.audioUrl : fresco.audioUrl,
+            toolsEjecutadas: respuesta.toolsEjecutadas.isNotEmpty ? respuesta.toolsEjecutadas : fresco.toolsEjecutadas,
           );
-      await cola.guardar(captura.copyWith(
-        estado: EstadoCaptura.enviada,
-        transcripcion: respuesta.transcripcion,
-        respuesta: respuesta.respuesta,
-        audioUrl: respuesta.audioUrl,
-        toolsEjecutadas: respuesta.toolsEjecutadas,
-      ));
-      _proximoIntentoEpochMs.remove(id);
-    } on VozServiceException catch (e) {
-      final intentos = captura.intentos + 1;
-      if (e.reintentable) {
-        _programarReintento(id, intentos);
-        await cola.guardar(captura.copyWith(
-          estado: EstadoCaptura.pendiente,
-          intentos: intentos,
-          errorMensaje: e.mensaje,
-        ));
-      } else {
+        });
         _proximoIntentoEpochMs.remove(id);
-        await cola.guardar(captura.copyWith(
-          estado: EstadoCaptura.fallida,
-          intentos: intentos,
-          errorMensaje: e.mensaje,
-        ));
+      } on VozServiceException catch (e) {
+        final intentos = captura.intentos + 1;
+        if (e.reintentable) {
+          _programarReintento(id, intentos);
+          await _actualizar(id, (fresco) => fresco.copyWith(
+                estado: EstadoCaptura.pendiente,
+                intentos: intentos,
+                errorMensaje: e.mensaje,
+              ));
+        } else {
+          _proximoIntentoEpochMs.remove(id);
+          await _actualizar(id, (fresco) => fresco.copyWith(
+                estado: EstadoCaptura.fallida,
+                intentos: intentos,
+                errorMensaje: e.mensaje,
+              ));
+        }
+      } catch (e) {
+        final intentos = captura.intentos + 1;
+        _programarReintento(id, intentos);
+        await _actualizar(id, (fresco) => fresco.copyWith(
+              estado: EstadoCaptura.pendiente,
+              intentos: intentos,
+              errorMensaje: 'Error inesperado: $e',
+            ));
       }
-    } catch (e) {
-      final intentos = captura.intentos + 1;
-      _programarReintento(id, intentos);
-      await cola.guardar(captura.copyWith(
-        estado: EstadoCaptura.pendiente,
-        intentos: intentos,
-        errorMensaje: 'Error inesperado: $e',
-      ));
+    } finally {
+      _enVuelo.remove(id);
+      _enviandoDesdeEpochMs.remove(id);
     }
   }
 

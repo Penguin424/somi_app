@@ -46,8 +46,9 @@ class VozService {
   static const _connectTimeout = Duration(seconds: 10);
 
   /// Normaliza la URL base para tolerar que en Ajustes se pegue con "/" al
-  /// final.
-  static String _normalizar(String baseUrl) {
+  /// final. Pública porque `CapturaNotifier` la reusa para armar la URL
+  /// del audio de respuesta (`audioUrlRelativo`) sin duplicar la lógica.
+  static String normalizarBaseUrl(String baseUrl) {
     var limpia = baseUrl.trim();
     while (limpia.endsWith('/')) {
       limpia = limpia.substring(0, limpia.length - 1);
@@ -58,7 +59,7 @@ class VozService {
   Future<HealthResultado> health({required String baseUrl, String? token}) async {
     try {
       final response = await _dio.get(
-        '${_normalizar(baseUrl)}/health',
+        '${normalizarBaseUrl(baseUrl)}/health',
         options: Options(
           headers: (token != null && token.isNotEmpty)
               ? {'Authorization': 'Bearer $token'}
@@ -120,12 +121,15 @@ class VozService {
         'audio': await MultipartFile.fromFile(
           audio.path,
           filename: audio.path.split(Platform.pathSeparator).last,
+          // Sin esto Dio manda `application/octet-stream` y el servidor
+          // tiene que adivinar el formato por el nombre del archivo.
+          contentType: DioMediaType('audio', 'mp4'),
         ),
         'idempotency_key': idempotencyKey,
         'contexto': contexto,
       });
       final response = await _dio.post(
-        '${_normalizar(baseUrl)}/voz',
+        '${normalizarBaseUrl(baseUrl)}/voz',
         data: formData,
         options: Options(
           headers: {'Authorization': 'Bearer $token'},
@@ -166,9 +170,29 @@ class VozService {
       );
     }
     if (status == 400 || status == 401 || status == 422) {
-      return VozServiceException(_mensajeParaStatus(status), statusCode: status, reintentable: false);
+      return VozServiceException(
+        _mensajeDelServidor(e) ?? _mensajeParaStatus(status),
+        statusCode: status,
+        reintentable: false,
+      );
     }
     return VozServiceException('Error inesperado del servidor', statusCode: status, reintentable: true);
+  }
+
+  /// El servidor manda el motivo real en el cuerpo de la respuesta
+  /// (`{"detail": ...}` o `{"error": ...}`, según el endpoint). Antes se
+  /// descartaba y siempre se mostraba el mismo texto genérico según el
+  /// status code, lo que hacía imposible distinguir "audio vacío" de
+  /// cualquier otro motivo detrás de un 400.
+  String? _mensajeDelServidor(DioException e) {
+    final data = e.response?.data;
+    if (data is Map) {
+      final valor = data['detail'] ?? data['error'] ?? data['message'];
+      if (valor is String && valor.trim().isNotEmpty) return valor;
+    } else if (data is String && data.trim().isNotEmpty) {
+      return data;
+    }
+    return null;
   }
 
   String _mensajeParaStatus(int status) {

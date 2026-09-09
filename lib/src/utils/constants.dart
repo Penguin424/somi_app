@@ -13,6 +13,20 @@ class AppConstants {
 
   static const Duration pingInterval = Duration(seconds: 30);
 
+  /// Plazo de inactividad de un turno por `WS /chat`: se reinicia con
+  /// cada evento real del servidor (`transcripcion`, `token`,
+  /// `tool_inicio`, `tool_fin`, `audio_chunk`). `ping` no cuenta como
+  /// actividad (viene cada [pingInterval] sin importar si el turno sigue
+  /// vivo). Antes había un único timeout de 20s para todo el turno, que
+  /// no toleraba el tool calling normal del LLM.
+  static const Duration wsInactividadTimeout = Duration(seconds: 25);
+
+  /// Tope global de un turno por WS, sin importar la actividad: guarda
+  /// de seguridad para no quedar esperando para siempre si el servidor
+  /// manda actividad pero nunca termina. Alineado con
+  /// [maxRecordingDuration].
+  static const Duration wsTurnoTimeoutMaximo = Duration(minutes: 3);
+
   /// Backoff exponencial para reintentos de la cola offline: 2s, 4s, 8s...
   /// hasta un tope de 5 minutos, como pide APP_FLUTTER.md.
   static const List<Duration> retryBackoff = [

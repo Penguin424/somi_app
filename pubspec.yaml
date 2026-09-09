@@ -37,6 +37,8 @@ dependencies:
   flutter_riverpod: ^3.3.2
   record: ^6.2.1
   just_audio: ^0.10.6
+  audio_session: ^0.2.4
+  flutter_tts: ^4.2.5
   web_socket_channel: ^3.0.3
   dio: ^5.11.0
   flutter_secure_storage: ^11.0.0
@@ -59,6 +61,19 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+# WORKAROUND, no decisión de diseño: `path_provider_foundation` >=2.4.0
+# depende de `package:objective_c`, que usa el sistema experimental de
+# "native assets" de Dart. En este toolchain (Flutter 3.41.9) el hook de
+# native assets falla en runtime con `Couldn't resolve native function
+# 'DOBJC_initializeApi'` porque Xcode no le pasa `SdkRoot` al invocar el
+# build hook — la app queda en pantalla blanca apenas arranca, en
+# cualquier build para el simulador de iOS (con o sin firma), sin
+# relación con el código de la app. Se fija 2.3.2 (el piso que ya permite
+# `path_provider ^2.1.6`, la última versión sin esa dependencia) hasta
+# que se actualice el Flutter SDK o se resuelva el bug de native assets.
+dependency_overrides:
+  path_provider_foundation: 2.3.2
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
@@ -70,6 +85,23 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Clash Display (ITF Free Font License vía Fontshare, ver
+  # assets/fonts/LICENSE-ClashDisplay.txt): tipografía display del sistema
+  # de diseño UPONPENGUIN.
+  fonts:
+    - family: ClashDisplay
+      fonts:
+        - asset: assets/fonts/ClashDisplay-Extralight.otf
+          weight: 200
+        - asset: assets/fonts/ClashDisplay-Light.otf
+          weight: 300
+        - asset: assets/fonts/ClashDisplay-Regular.otf
+          weight: 400
+        - asset: assets/fonts/ClashDisplay-Medium.otf
+          weight: 500
+        - asset: assets/fonts/ClashDisplay-Semibold.otf
+          weight: 600
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
@@ -80,23 +112,6 @@ flutter:
 
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package
-
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package

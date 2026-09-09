@@ -21,6 +21,7 @@ class SettingsState {
     this.servidorOk,
     this.verificandoServidor = false,
     this.servidorDetalle,
+    this.ttsLocalHabilitado = true,
   });
 
   final String baseUrl;
@@ -32,6 +33,12 @@ class SettingsState {
   /// "Servidor arriba").
   final String? servidorDetalle;
 
+  /// Si está apagado, `CapturaNotifier` nunca habla con `flutter_tts`
+  /// aunque el audio del servidor no llegue: la nota se guarda igual,
+  /// solo que en silencio. Activado por defecto, es el respaldo que
+  /// evita que la app se quede muda.
+  final bool ttsLocalHabilitado;
+
   bool get tieneToken => token != null && token!.isNotEmpty;
 
   SettingsState copyWith({
@@ -40,6 +47,7 @@ class SettingsState {
     bool? servidorOk,
     bool? verificandoServidor,
     String? servidorDetalle,
+    bool? ttsLocalHabilitado,
   }) {
     return SettingsState(
       baseUrl: baseUrl ?? this.baseUrl,
@@ -47,6 +55,7 @@ class SettingsState {
       servidorOk: servidorOk ?? this.servidorOk,
       verificandoServidor: verificandoServidor ?? this.verificandoServidor,
       servidorDetalle: servidorDetalle ?? this.servidorDetalle,
+      ttsLocalHabilitado: ttsLocalHabilitado ?? this.ttsLocalHabilitado,
     );
   }
 }
@@ -57,7 +66,8 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
     final storage = ref.watch(secureStorageProvider);
     final token = await storage.readToken();
     final baseUrl = await storage.readBaseUrl() ?? AppConstants.defaultBaseUrl;
-    return SettingsState(baseUrl: baseUrl, token: token);
+    final ttsLocalHabilitado = await storage.readTtsLocalHabilitado() ?? true;
+    return SettingsState(baseUrl: baseUrl, token: token, ttsLocalHabilitado: ttsLocalHabilitado);
   }
 
   Future<void> guardarToken(String token) async {
@@ -74,6 +84,12 @@ class SettingsNotifier extends AsyncNotifier<SettingsState> {
     await ref.read(secureStorageProvider).writeBaseUrl(limpia);
     final actual = state.value ?? const SettingsState(baseUrl: AppConstants.defaultBaseUrl);
     state = AsyncData(actual.copyWith(baseUrl: limpia));
+  }
+
+  Future<void> establecerTtsLocalHabilitado(bool habilitado) async {
+    await ref.read(secureStorageProvider).writeTtsLocalHabilitado(habilitado);
+    final actual = state.value ?? const SettingsState(baseUrl: AppConstants.defaultBaseUrl);
+    state = AsyncData(actual.copyWith(ttsLocalHabilitado: habilitado));
   }
 
   Future<void> verificarServidor() async {
